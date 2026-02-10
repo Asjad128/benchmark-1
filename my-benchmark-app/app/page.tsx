@@ -13,7 +13,7 @@ type Stats = {
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(false)
-  const API = 'http://localhost:8000'
+  const API = 'https://benchmark-1-rl6i.onrender.com/'
 
   // Fetch live stats every 2 seconds
   useEffect(() => {
