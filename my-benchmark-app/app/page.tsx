@@ -11,11 +11,11 @@ interface BenchmarkResult {
   server_pid: number;
 }
 
-
 interface BenchmarkStats {
   requests: number;
   success: number;
   avgDuration: number;
+  p95: number;
   errors: number;
   totalThroughput: number;
 }
@@ -25,270 +25,118 @@ export default function BenchmarkPage(): React.JSX.Element {
     requests: 0,
     success: 0,
     avgDuration: 0,
+    p95: 0,
     errors: 0,
     totalThroughput: 0
   });
+
   const [loading, setLoading] = useState<boolean>(false);
-  const [backendUrl, setBackendUrl] = useState<string>('https://benchmark-1.vercel.app/');
+  const [backendUrl, setBackendUrl] = useState<string>('https://benchmark-1.vercel.app');
   const [individualResults, setIndividualResults] = useState<BenchmarkResult[]>([]);
 
-  const runBenchmark = useCallback(async (
-    concurrency: number = 10, 
-    iterations: number = 5000000
-  ): Promise<void> => {
+  const runBenchmark = useCallback(async (concurrency = 10, work = 5_000_000) => {
     setLoading(true);
     setIndividualResults([]);
 
-    const promises: Promise<BenchmarkResult | { error: boolean }>[] = [];
-    
-    for (let i = 0; i < concurrency; i++) {
-      promises.push(
-        fetch(`${backendUrl.replace(/\/$/, "")}/benchmark?work=${iterations}`), {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    try {
+      const promises = Array.from({ length: concurrency }).map(() =>
+        fetch(`${backendUrl.replace(/\/$/, "")}/benchmark?work=${work}`, {
           method: 'GET',
-          headers: { 'Accept': 'application/json' }
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
         })
-          .then((res): Promise<BenchmarkResult> => {
+          .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.json() as Promise<BenchmarkResult>;
           })
-          .catch(() => ({ error: true } as { error: boolean }))
+          .catch(() => null)
       );
+
+      const results = await Promise.all(promises);
+      const successfulResults = results.filter((r): r is BenchmarkResult => r !== null);
+
+      const durations = successfulResults.map(r => r.duration_ms ?? 0);
+      const sorted = [...durations].sort((a, b) => a - b);
+      const p95 = sorted.length ? sorted[Math.floor(sorted.length * 0.95)] : 0;
+      const avgDuration = durations.length
+        ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+        : 0;
+
+      const totalThroughput = successfulResults.reduce((sum, r) => sum + (r.throughput ?? 0), 0);
+
+      setStats({
+        requests: concurrency,
+        success: successfulResults.length,
+        avgDuration,
+        p95,
+        errors: concurrency - successfulResults.length,
+        totalThroughput: Math.round(totalThroughput)
+      });
+
+      setIndividualResults(successfulResults);
+    } catch {
+      setStats(prev => ({ ...prev, errors: concurrency }));
+    } finally {
+      clearTimeout(timeout);
+      setLoading(false);
     }
-
-    const settledResults = await Promise.allSettled(promises);
-    const successfulResults: BenchmarkResult[] = settledResults
-      .filter((result): result is PromiseFulfilledResult<BenchmarkResult> => 
-        result.status === 'fulfilled' && !('error' in result.value)
-      )
-      .map(result => result.value);
-
-    const successCount = successfulResults.length;
-    const durations = successfulResults.map(r => r.duration_ms);
-    const avgDuration = durations.length 
-      ? Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length)
-      : 0;
-    const totalThroughput = successfulResults.reduce((sum, r) => sum + (r.throughput ?? 0), 0);
-    const latencies = successfulResults.map(r => r.duration_ms);
-    const p95 = latencies.sort((a,b)=>a-b)[Math.floor(latencies.length*0.95)];
-
-
-    setStats({
-      requests: concurrency,
-      success: successCount,
-      avgDuration,
-      errors: concurrency - successCount,
-      totalThroughput: Math.round(totalThroughput)
-    });
-    
-    setIndividualResults(successfulResults);
-    setLoading(false);
   }, [backendUrl]);
 
   return (
-    <main style={{
-      padding: '2rem',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      maxWidth: '1200px',
-      margin: '0 auto'
-    }}>
-      <h1 style={{ fontSize: '2.5rem', marginBottom: '1rem', color: '#1e293b' }}>
-        FastAPI + Next.js Benchmark
-      </h1>
-      
-      <div style={{
-        background: 'white',
-        padding: '2rem',
-        borderRadius: '12px',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
-        marginBottom: '2rem'
-      }}>
-        <label style={{ 
-          display: 'block', 
-          marginBottom: '0.5rem', 
-          fontWeight: 'bold',
-          color: '#374151'
-        }}>
-          FastAPI Backend URL:
-        </label>
-        <input
-          type="url"
-          value={backendUrl}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBackendUrl(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            border: '2px solid #e2e8f0',
-            borderRadius: '8px',
-            fontSize: '1rem',
-            marginBottom: '1rem'
-          }}
-          placeholder="https://benchmark-1.vercel.app/"
-        />
-        
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <button 
-            onClick={() => runBenchmark(5, 1000000)}
-            disabled={loading}
-            style={{
-              padding: '0.75rem 1.5rem',
-              border: 'none',
-              borderRadius: '8px',
-              background: '#10b981',
-              color: 'white',
-              fontSize: '1rem',
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Light Load (5 reqs)
-          </button>
-          <button 
-            onClick={() => runBenchmark(20, 5000000)}
-            disabled={loading}
-            style={{
-              padding: '0.75rem 1.5rem',
-              border: 'none',
-              borderRadius: '8px',
-              background: '#ef4444',
-              color: 'white',
-              fontSize: '1rem',
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Heavy Load (20 reqs)
-          </button>
-          <button 
-            onClick={() => runBenchmark(50, 10000000)}
-            disabled={loading}
-            style={{
-              padding: '0.75rem 1.5rem',
-              border: 'none',
-              borderRadius: '8px',
-              background: '#8b5cf6',
-              color: 'white',
-              fontSize: '1rem',
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            Extreme Load (50 reqs)
-          </button>
-        </div>
-        
-        {loading && (
-          <div style={{
-            background: '#f8fafc',
-            padding: '1rem',
-            borderRadius: '8px',
-            marginTop: '1rem',
-            borderLeft: '4px solid #3b82f6'
-          }}>
-            Running benchmark... This loads your FastAPI server CPU!
-          </div>
-        )}
+    <main style={{ padding: '2rem', fontFamily: 'system-ui', maxWidth: '1200px', margin: '0 auto' }}>
+      <h1 style={{ fontSize: '2.5rem' }}>FastAPI + Next.js Benchmark</h1>
+
+      <input
+        type="url"
+        value={backendUrl}
+        onChange={(e) => setBackendUrl(e.target.value)}
+        style={{ width: '100%', padding: '0.75rem', marginBottom: '1rem' }}
+      />
+
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <button onClick={() => runBenchmark(5, 1_000_000)} disabled={loading}>Light</button>
+        <button onClick={() => runBenchmark(20, 5_000_000)} disabled={loading}>Heavy</button>
+        <button onClick={() => runBenchmark(50, 10_000_000)} disabled={loading}>Extreme</button>
       </div>
+
+      {loading && <p>Running benchmark…</p>}
 
       {stats.requests > 0 && (
         <>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '1rem',
-            marginBottom: '2rem'
-          }}>
-            <div style={{
-              background: 'white',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>{stats.requests}</div>
-              <div>Total Requests</div>
-            </div>
-            <div style={{
-              background: 'white',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#10b981' }}>{stats.success}</div>
-              <div>Success</div>
-            </div>
-            <div style={{
-              background: 'white',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#ef4444' }}>{stats.errors}</div>
-              <div>Errors</div>
-            </div>
-            <div style={{
-              background: 'white',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#f59e0b' }}>{stats.avgDuration}ms</div>
-              <div>Avg Duration</div>
-            </div>
-            <div style={{
-              background: 'white',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#3b82f6' }}>{stats.totalThroughput.toLocaleString()}</div>
-              <div>Total Throughput</div>
-            </div>
-          </div>
+          <h2>Stats</h2>
+          <ul>
+            <li>Requests: {stats.requests}</li>
+            <li>Success: {stats.success}</li>
+            <li>Errors: {stats.errors}</li>
+            <li>Avg Duration: {stats.avgDuration} ms</li>
+            <li>P95 Latency: {stats.p95} ms</li>
+            <li>Total Throughput: {stats.totalThroughput.toLocaleString()}</li>
+          </ul>
 
-          <div style={{
-            background: 'white',
-            padding: '2rem',
-            borderRadius: '12px',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-          }}>
-            <h2 style={{ marginTop: 0, color: '#1e293b', marginBottom: '1rem' }}>Individual Results</h2>
-            <table style={{ 
-              width: '100%', 
-              borderCollapse: 'collapse',
-              fontSize: '0.9rem'
-            }}>
-              <thead>
-                <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Duration</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Iterations</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Result</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Throughput</th>
+          <h2>Individual Results</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th>Duration</th>
+                <th>Work</th>
+                <th>Result</th>
+                <th>Throughput</th>
+              </tr>
+            </thead>
+            <tbody>
+              {individualResults.map((r, i) => (
+                <tr key={i}>
+                  <td>{(r.duration_ms ?? 0).toFixed(0)} ms</td>
+                  <td>{(r.work_units ?? 0).toLocaleString()}</td>
+                  <td>{(r.result_hash ?? 0).toLocaleString()}</td>
+                  <td>{(r.throughput ?? 0).toLocaleString()}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {individualResults.map((result, index) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '0.75rem', minWidth: '120px' }}>
-                      {result.duration_ms.toFixed(0)}ms
-                    </td>
-                    <td style={{ padding: '0.75rem' }}>
-                      {(result.work_units ?? 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '0.75rem' }}>
-                      {(result.result_hash ?? 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '0.75rem' }}>
-                      {(result.throughput ?? 0).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </>
       )}
     </main>
