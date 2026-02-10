@@ -1,121 +1,94 @@
-'use client'
+"use client";
+import { useState } from "react";
 
-import { useEffect, useState } from 'react'
+const API = "https://benchmark-1-rl6i.onrender.com/"; // 🔁 put Render URL
 
-type Stats = {
-  cpu_load: number
-  memory_usage: number
-  active_users: number
-  requests_per_sec: number
-  db_ops_per_sec: number
-}
+type AnyResult = Record<string, any>;
 
-export default function Dashboard() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [loading, setLoading] = useState(false)
-  const API = 'https://benchmark-1-rl6i.onrender.com'
+export default function BenchmarkSuite() {
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<Record<string, AnyResult>>({});
+  const [error, setError] = useState("");
 
-  // Fetch live stats every 2 seconds
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await fetch(`${API}/`)
-        const data = await res.json()
-        setStats(data)
-      } catch (err) {
-        console.error('Server not reachable')
-      }
-    }
-
-    fetchStats()
-    const interval = setInterval(fetchStats, 2000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const triggerLoad = async (endpoint: string, body: any) => {
-    setLoading(true)
+  const callAPI = async (endpoint: string, label: string) => {
+    setLoading(true);
+    setError("");
     try {
-      await fetch(`${API}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-    } catch (e) {
-      console.error(e)
+      const res = await fetch(`${API}${endpoint}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setResults(prev => ({ ...prev, [label]: data }));
+    } catch {
+      setError(`Failed to call ${label}`);
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
-  const resetLoads = async () => {
-    await fetch(`${API}/reset`, { method: 'POST' })
-  }
+  const runAll = async () => {
+    setResults({});
+    await Promise.all([
+      callAPI("/cpu-benchmark", "CPU Benchmark"),
+      callAPI("/db-benchmark", "DB Benchmark"),
+      callAPI("/memory-benchmark", "Memory Benchmark"),
+      callAPI("/mixed-benchmark", "Mixed Benchmark"),
+      callAPI("/concurrency-check", "Concurrency Check")
+    ]);
+  };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
-      <h1 className="text-3xl font-bold mb-6">🚀 FastAPI Load Benchmark Dashboard</h1>
+    <div className="p-10 font-mono max-w-6xl mx-auto">
+      <h1 className="text-4xl font-bold mb-8">Hosting Benchmark Suite</h1>
 
-      {/* Metrics Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <Metric title="CPU Load" value={`${stats?.cpu_load ?? 0}%`} />
-        <Metric title="Memory Usage" value={`${stats?.memory_usage ?? 0}%`} />
-        <Metric title="Active Users" value={stats?.active_users ?? 0} />
-        <Metric title="Req/sec" value={stats?.requests_per_sec ?? 0} />
-        <Metric title="DB Ops/sec" value={stats?.db_ops_per_sec ?? 0} />
-      </div>
+      <div className="flex flex-wrap gap-4 mb-6">
+        <button onClick={() => callAPI("/", "Health")}
+          className="bg-gray-700 text-white px-4 py-2 rounded">
+          Health Check
+        </button>
 
-      {/* Controls */}
-      <div className="grid md:grid-cols-3 gap-6">
+        <button onClick={() => callAPI("/cpu-benchmark", "CPU Benchmark")}
+          className="bg-blue-600 text-white px-4 py-2 rounded">
+          CPU Test
+        </button>
 
-        <ControlCard
-          title="Simulate CPU Load"
-          onClick={() => triggerLoad('/simulate-cpu', { intensity: 80, duration: 30 })}
-        />
+        <button onClick={() => callAPI("/memory-benchmark", "Memory Benchmark")}
+          className="bg-purple-600 text-white px-4 py-2 rounded">
+          Memory Test
+        </button>
 
-        <ControlCard
-          title="Simulate DB / IO Load"
-          onClick={() => triggerLoad('/simulate-io', { queries_per_sec: 200, duration: 30 })}
-        />
+        <button onClick={() => callAPI("/db-benchmark", "DB Benchmark")}
+          className="bg-yellow-600 text-white px-4 py-2 rounded">
+          DB Test
+        </button>
 
-        <ControlCard
-          title="Simulate 1000 Users"
-          onClick={() => triggerLoad('/simulate-users', { users: 1000 })}
-        />
+        <button onClick={() => callAPI("/mixed-benchmark", "Mixed Benchmark")}
+          className="bg-pink-600 text-white px-4 py-2 rounded">
+          Mixed Test
+        </button>
 
-      </div>
+        <button onClick={() => callAPI("/concurrency-check", "Concurrency Check")}
+          className="bg-red-600 text-white px-4 py-2 rounded">
+          Concurrency Test
+        </button>
 
-      <div className="mt-8">
-        <button
-          onClick={resetLoads}
-          className="bg-red-600 px-6 py-3 rounded-xl font-semibold hover:bg-red-700"
-        >
-          🔴 Stop All Loads
+        <button onClick={runAll}
+          className="bg-green-700 text-white px-4 py-2 rounded font-bold">
+          Run All
         </button>
       </div>
 
-      {loading && <p className="mt-4 text-yellow-400">Applying load...</p>}
-    </div>
-  )
-}
+      {loading && <p className="text-blue-500">Running benchmark...</p>}
+      {error && <p className="text-red-500">{error}</p>}
 
-function Metric({ title, value }: { title: string; value: any }) {
-  return (
-    <div className="bg-gray-800 p-4 rounded-xl shadow-lg text-center">
-      <p className="text-sm text-gray-400">{title}</p>
-      <p className="text-2xl font-bold">{value}</p>
+      <div className="grid gap-6">
+        {Object.entries(results).map(([name, data]) => (
+          <div key={name} className="border rounded p-4 shadow">
+            <h2 className="text-xl font-bold mb-2">{name}</h2>
+            <pre className="bg-black text-green-400 p-3 rounded text-sm overflow-x-auto">
+              {JSON.stringify(data, null, 2)}
+            </pre>
+          </div>
+        ))}
+      </div>
     </div>
-  )
-}
-
-function ControlCard({ title, onClick }: { title: string; onClick: () => void }) {
-  return (
-    <div className="bg-gray-800 p-6 rounded-xl shadow-lg flex flex-col justify-between">
-      <h2 className="text-lg font-semibold mb-4">{title}</h2>
-      <button
-        onClick={onClick}
-        className="bg-blue-600 py-2 rounded-lg hover:bg-blue-700"
-      >
-        Start
-      </button>
-    </div>
-  )
+  );
 }
