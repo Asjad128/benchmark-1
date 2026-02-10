@@ -4,11 +4,13 @@ import { useState, useCallback } from 'react';
 
 interface BenchmarkResult {
   status: string;
-  iterations: number;
-  result: number;
+  work_units: number;
+  result_hash: number;
   duration_ms: number;
   throughput: number;
+  server_pid: number;
 }
+
 
 interface BenchmarkStats {
   requests: number;
@@ -65,7 +67,7 @@ export default function BenchmarkPage(): React.JSX.Element {
     const avgDuration = durations.length 
       ? Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length)
       : 0;
-    const totalThroughput = successfulResults.reduce((sum: number, r: BenchmarkResult) => sum + r.throughput, 0);
+    const totalThroughput = successfulResults.reduce((sum, r) => sum + (r.throughput ?? 0), 0);
     const latencies = successfulResults.map(r => r.duration_ms);
     const p95 = latencies.sort((a,b)=>a-b)[Math.floor(latencies.length*0.95)];
 
@@ -274,13 +276,13 @@ export default function BenchmarkPage(): React.JSX.Element {
                       {result.duration_ms.toFixed(0)}ms
                     </td>
                     <td style={{ padding: '0.75rem' }}>
-                      {result.iterations.toLocaleString()}
+                      {(result.work_units ?? 0).toLocaleString()}
                     </td>
                     <td style={{ padding: '0.75rem' }}>
-                      {Math.round(result.result).toLocaleString()}
+                      {(result.result_hash ?? 0).toLocaleString()}
                     </td>
                     <td style={{ padding: '0.75rem' }}>
-                      {result.throughput.toLocaleString()}
+                      {(result.throughput ?? 0).toLocaleString()}
                     </td>
                   </tr>
                 ))}
