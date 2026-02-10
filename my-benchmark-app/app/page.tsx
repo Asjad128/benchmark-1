@@ -27,7 +27,7 @@ export default function BenchmarkPage(): React.JSX.Element {
     totalThroughput: 0
   });
   const [loading, setLoading] = useState<boolean>(false);
-  const [backendUrl, setBackendUrl] = useState<string>('http://localhost:8000');
+  const [backendUrl, setBackendUrl] = useState<string>('https://benchmark-1.vercel.app/');
   const [individualResults, setIndividualResults] = useState<BenchmarkResult[]>([]);
 
   const runBenchmark = useCallback(async (
@@ -117,7 +117,7 @@ export default function BenchmarkPage(): React.JSX.Element {
             fontSize: '1rem',
             marginBottom: '1rem'
           }}
-          placeholder="https://your-render-app.onrender.com"
+          placeholder="https://benchmark-1.vercel.app/"
         />
         
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
