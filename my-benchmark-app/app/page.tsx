@@ -41,7 +41,7 @@ export default function BenchmarkPage(): React.JSX.Element {
     
     for (let i = 0; i < concurrency; i++) {
       promises.push(
-        fetch(`${backendUrl}/benchmark?iterations=${iterations}`, {
+        fetch(`${backendUrl.replace(/\/$/, "")}/benchmark?work=${iterations}`){
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         })
@@ -66,6 +66,9 @@ export default function BenchmarkPage(): React.JSX.Element {
       ? Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length)
       : 0;
     const totalThroughput = successfulResults.reduce((sum: number, r: BenchmarkResult) => sum + r.throughput, 0);
+    const latencies = successfulResults.map(r => r.duration_ms);
+    const p95 = latencies.sort((a,b)=>a-b)[Math.floor(latencies.length*0.95)];
+
 
     setStats({
       requests: concurrency,
