@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-const API = "https://benchmark-1-rl6i.onrender.com/"; // 🔁 put Render URL
+const API = "https://benchmark-1-rl6i.onrender.com"; // 🔁 put Render URL
 
 type AnyResult = Record<string, any>;
 
