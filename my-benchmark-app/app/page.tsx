@@ -43,7 +43,7 @@ export default function BenchmarkPage(): React.JSX.Element {
     
     for (let i = 0; i < concurrency; i++) {
       promises.push(
-        fetch(`${backendUrl.replace(/\/$/, "")}/benchmark?work=${iterations}`){
+        fetch(`${backendUrl.replace(/\/$/, "")}/benchmark?work=${iterations}`), {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         })
