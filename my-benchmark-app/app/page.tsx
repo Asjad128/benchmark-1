@@ -19,7 +19,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch(`${API}/stats`)
+        const res = await fetch(`${API}/Health`)
         const data = await res.json()
         setStats(data)
       } catch (err) {
